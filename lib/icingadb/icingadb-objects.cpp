@@ -1771,6 +1771,9 @@ void IcingaDB::SendStartedDowntime(const Downtime::Ptr& downtime)
 	Service::Ptr service;
 	tie(host, service) = GetHostService(checkable);
 
+	/* Update checkable state as in_downtime may have changed. */
+	UpdateState(checkable, true);
+
 	std::vector<String> xAdd ({
 		"XADD", "icinga:history:stream:downtime", "*",
 		"downtime_id", GetObjectIdentifier(downtime),
@@ -1855,6 +1858,9 @@ void IcingaDB::SendRemovedDowntime(const Downtime::Ptr& downtime)
 	// Downtime never got triggered (didn't send "downtime_start") so we don't want to send "downtime_end"
 	if (downtime->GetTriggerTime() == 0)
 		return;
+
+	/* Update checkable state as in_downtime may have changed. */
+	UpdateState(checkable, true);
 
 	std::vector<String> xAdd ({
 		"XADD", "icinga:history:stream:downtime", "*",
@@ -2596,8 +2602,6 @@ void IcingaDB::VersionChangedHandler(const ConfigObject::Ptr& object)
 
 void IcingaDB::DowntimeStartedHandler(const Downtime::Ptr& downtime)
 {
-	StateChangeHandler(downtime->GetCheckable());
-
 	for (auto& rw : ConfigType::GetObjectsByType<IcingaDB>()) {
 		rw->SendStartedDowntime(downtime);
 	}
@@ -2605,8 +2609,6 @@ void IcingaDB::DowntimeStartedHandler(const Downtime::Ptr& downtime)
 
 void IcingaDB::DowntimeRemovedHandler(const Downtime::Ptr& downtime)
 {
-	StateChangeHandler(downtime->GetCheckable());
-
 	for (auto& rw : ConfigType::GetObjectsByType<IcingaDB>()) {
 		rw->SendRemovedDowntime(downtime);
 	}
