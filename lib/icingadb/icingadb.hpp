@@ -129,7 +129,6 @@ private:
 	static String GetLowerCaseTypeNameDB(const ConfigObject::Ptr& obj);
 	static bool PrepareObject(const ConfigObject::Ptr& object, Dictionary::Ptr& attributes, Dictionary::Ptr& checkSums);
 
-	static void StateChangeHandler(const ConfigObject::Ptr& object);
 	static void StateChangeHandler(const ConfigObject::Ptr& object, const CheckResult::Ptr& cr, StateType type);
 	static void VersionChangedHandler(const ConfigObject::Ptr& object);
 	static void DowntimeStartedHandler(const Downtime::Ptr& downtime);
@@ -158,6 +157,7 @@ private:
 	static void CommandEnvChangedHandler(const ConfigObject::Ptr& command, const Dictionary::Ptr& oldValues, const Dictionary::Ptr& newValues);
 	static void CommandArgumentsChangedHandler(const ConfigObject::Ptr& command, const Dictionary::Ptr& oldValues, const Dictionary::Ptr& newValues);
 	static void CustomVarsChangedHandler(const ConfigObject::Ptr& object, const Dictionary::Ptr& oldValues, const Dictionary::Ptr& newValues);
+	static void UpdateStateHandler(const Checkable::Ptr& checkable);
 
 	void AssertOnWorkQueue();
 

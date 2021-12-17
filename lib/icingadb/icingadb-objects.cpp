@@ -85,11 +85,11 @@ void IcingaDB::ConfigStaticInitialize()
 	});
 
 	Checkable::OnAcknowledgementSet.connect([](const Checkable::Ptr& checkable, const String& author, const String& comment, AcknowledgementType type, bool, bool persistent, double changeTime, double expiry, const MessageOrigin::Ptr&) {
-		IcingaDB::StateChangeHandler(checkable);
+		IcingaDB::UpdateStateHandler(checkable);
 	});
 	/* triggered when acknowledged host/service goes back to ok and when the acknowledgement gets deleted */
 	Checkable::OnAcknowledgementCleared.connect([](const Checkable::Ptr& checkable, const String&, double, const MessageOrigin::Ptr&) {
-		IcingaDB::StateChangeHandler(checkable);
+		IcingaDB::UpdateStateHandler(checkable);
 	});
 
 	/* triggered on create, update and delete objects */
@@ -127,7 +127,8 @@ void IcingaDB::ConfigStaticInitialize()
 	});
 
 	Service::OnHostProblemChanged.connect([](const Service::Ptr& service, const CheckResult::Ptr&, const MessageOrigin::Ptr&) {
-		IcingaDB::StateChangeHandler(service);
+		/* Host state changes affect is_handled and severity of services. */
+		IcingaDB::UpdateStateHandler(service);
 	});
 
 	Notification::OnUsersRawChangedWithOldValue.connect([](const Notification::Ptr& notification, const Value& oldValues, const Value& newValues) {
@@ -1596,6 +1597,13 @@ unsigned short GetPreviousState(const Checkable::Ptr& checkable, const Service::
 	}
 }
 
+void IcingaDB::UpdateStateHandler(const Checkable::Ptr& checkable)
+{
+	for (const IcingaDB::Ptr& rw : ConfigType::GetObjectsByType<IcingaDB>()) {
+		rw->UpdateState(checkable, true);
+	}
+}
+
 void IcingaDB::SendStateChange(const ConfigObject::Ptr& object, const CheckResult::Ptr& cr, StateType type)
 {
 	if (!m_Rcon || !m_Rcon->IsConnected())
@@ -2562,15 +2570,6 @@ IcingaDB::UpdateObjectAttrs(const ConfigObject::Ptr& object, int fieldType,
 
 	return {GetObjectIdentifier(object), JsonEncode(attrs)};
 	//m_Rcon->FireAndForgetQuery({"HSET", keyPrefix + typeName, GetObjectIdentifier(object), JsonEncode(attrs)});
-}
-
-void IcingaDB::StateChangeHandler(const ConfigObject::Ptr& object)
-{
-	auto checkable (dynamic_pointer_cast<Checkable>(object));
-
-	if (checkable) {
-		IcingaDB::StateChangeHandler(object, checkable->GetLastCheckResult(), checkable->GetStateType());
-	}
 }
 
 void IcingaDB::StateChangeHandler(const ConfigObject::Ptr& object, const CheckResult::Ptr& cr, StateType type)
