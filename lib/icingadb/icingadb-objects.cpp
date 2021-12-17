@@ -1082,7 +1082,7 @@ void IcingaDB::InsertObjectDependencies(const ConfigObject::Ptr& object, const S
 	}
 }
 
-void IcingaDB::UpdateState(const Checkable::Ptr& checkable)
+void IcingaDB::UpdateState(const Checkable::Ptr& checkable, bool sendRuntimeUpdate)
 {
 	if (!m_Rcon || !m_Rcon->IsConnected())
 		return;
@@ -1092,9 +1092,30 @@ void IcingaDB::UpdateState(const Checkable::Ptr& checkable)
 
 	Dictionary::Ptr stateAttrs = SerializeState(checkable);
 
-	m_Rcon->FireAndForgetQuery({"HSET", m_PrefixConfigObject + objectType + ":state", objectKey, JsonEncode(stateAttrs)}, Prio::RuntimeStateSync);
-	m_Rcon->FireAndForgetQuery({"HSET", m_PrefixConfigCheckSum + objectType + ":state", objectKey, JsonEncode(new Dictionary({{"checksum", HashValue(stateAttrs)}}))}, Prio::RuntimeStateSync);
+	String redisStateKey = m_PrefixConfigObject + objectType + ":state";
+	String redisChecksumKey = m_PrefixConfigCheckSum + objectType + ":state";
+	String checksum = HashValue(stateAttrs);
 
+	m_Rcon->FireAndForgetQuery({"HSET", redisStateKey, objectKey, JsonEncode(stateAttrs)}, Prio::RuntimeStateSync);
+	m_Rcon->FireAndForgetQuery({"HSET", redisChecksumKey, objectKey, JsonEncode(new Dictionary({{"checksum", checksum}}))}, Prio::RuntimeStateSync);
+
+	if (sendRuntimeUpdate) {
+		ObjectLock olock(stateAttrs);
+
+		std::vector<String> streamadd({
+			"XADD", "icinga:runtime:state", "MAXLEN", "~", "1000000", "*",
+			"runtime_type", "upsert",
+			"redis_key", redisStateKey,
+			"checksum", checksum,
+		});
+
+		for (const Dictionary::Pair& kv : stateAttrs) {
+			streamadd.emplace_back(kv.first);
+			streamadd.emplace_back(IcingaToStreamValue(kv.second));
+		}
+
+		m_Rcon->FireAndForgetQuery(std::move(streamadd), Prio::RuntimeStateStream);
+	}
 }
 
 // Used to update a single object, used for runtime updates
@@ -1111,16 +1132,7 @@ void IcingaDB::SendConfigUpdate(const ConfigObject::Ptr& object, bool runtimeUpd
 	CreateConfigUpdate(object, typeName, hMSets, runtimeUpdates, runtimeUpdate);
 	Checkable::Ptr checkable = dynamic_pointer_cast<Checkable>(object);
 	if (checkable) {
-		String objectKey = GetObjectIdentifier(object);
-		Dictionary::Ptr state = SerializeState(checkable);
-		String checksum = HashValue(state);
-
-		m_Rcon->FireAndForgetQuery({"HSET", m_PrefixConfigObject + typeName + ":state", objectKey, JsonEncode(state)}, Prio::RuntimeStateSync);
-		m_Rcon->FireAndForgetQuery({"HSET", m_PrefixConfigCheckSum + typeName + ":state", objectKey, JsonEncode(new Dictionary({{"checksum", checksum}}))}, Prio::RuntimeStateSync);
-
-		if (runtimeUpdate) {
-			SendStatusUpdate(checkable);
-		}
+		UpdateState(checkable, runtimeUpdate);
 	}
 
 	std::vector<std::vector<String> > transaction = {{"MULTI"}};
@@ -1584,31 +1596,6 @@ unsigned short GetPreviousState(const Checkable::Ptr& checkable, const Service::
 	}
 }
 
-void IcingaDB::SendStatusUpdate(const Checkable::Ptr& checkable)
-{
-	if (!m_Rcon || !m_Rcon->IsConnected())
-		return;
-
-	Host::Ptr host;
-	Service::Ptr service;
-	Dictionary::Ptr objectAttrs = SerializeState(checkable);
-	std::vector<String> streamadd({"XADD", "icinga:runtime:state", "MAXLEN", "~", "1000000", "*"});
-	ObjectLock olock(objectAttrs);
-
-	tie(host, service) = GetHostService(checkable);
-
-	objectAttrs->Set("checksum", HashValue(objectAttrs));
-	objectAttrs->Set("redis_key", service ? "icinga:service:state" : "icinga:host:state");
-	objectAttrs->Set("runtime_type", "upsert");
-
-	for (const Dictionary::Pair& kv : objectAttrs) {
-		streamadd.emplace_back(kv.first);
-		streamadd.emplace_back(IcingaToStreamValue(kv.second));
-	}
-
-	m_Rcon->FireAndForgetQuery(std::move(streamadd), Prio::RuntimeStateStream);
-}
-
 void IcingaDB::SendStateChange(const ConfigObject::Ptr& object, const CheckResult::Ptr& cr, StateType type)
 {
 	if (!m_Rcon || !m_Rcon->IsConnected())
@@ -1626,7 +1613,7 @@ void IcingaDB::SendStateChange(const ConfigObject::Ptr& object, const CheckResul
 
 	tie(host, service) = GetHostService(checkable);
 
-	SendStatusUpdate(checkable);
+	UpdateState(checkable, true);
 
 	int hard_state;
 	if (!cr) {
@@ -1993,8 +1980,7 @@ void IcingaDB::SendAddedComment(const Comment::Ptr& comment)
 	}
 
 	m_Rcon->FireAndForgetQuery(std::move(xAdd), Prio::History);
-	UpdateState(checkable);
-	SendStatusUpdate(checkable);
+	UpdateState(checkable, true);
 }
 
 void IcingaDB::SendRemovedComment(const Comment::Ptr& comment)
@@ -2062,8 +2048,7 @@ void IcingaDB::SendRemovedComment(const Comment::Ptr& comment)
 	}
 
 	m_Rcon->FireAndForgetQuery(std::move(xAdd), Prio::History);
-	UpdateState(checkable);
-	SendStatusUpdate(checkable);
+	UpdateState(checkable, true);
 }
 
 void IcingaDB::SendFlappingChange(const Checkable::Ptr& checkable, double changeTime, double flappingLastChange)
