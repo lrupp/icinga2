@@ -105,6 +105,8 @@ private:
 	void SendCommandArgumentsChanged(const ConfigObject::Ptr& command, const Dictionary::Ptr& oldValues, const Dictionary::Ptr& newValues);
 	void SendCustomVarsChanged(const ConfigObject::Ptr& object, const Dictionary::Ptr& oldValues, const Dictionary::Ptr& newValues);
 
+	void SendHistoryEntry(WorkQueue& wq, RedisConnection::Query entry);
+
 	std::vector<String> UpdateObjectAttrs(const ConfigObject::Ptr& object, int fieldType, const String& typeNameOverride);
 	Dictionary::Ptr SerializeState(const Checkable::Ptr& checkable);
 
@@ -168,6 +170,12 @@ private:
 
 	Timer::Ptr m_StatsTimer;
 	WorkQueue m_WorkQueue{0, 1, LogNotice};
+	WorkQueue m_AckHistoryWorkQueue{0, 1, LogNotice};
+	WorkQueue m_CommentHistoryWorkQueue{0, 1, LogNotice};
+	WorkQueue m_DowntimeHistoryWorkQueue{0, 1, LogNotice};
+	WorkQueue m_FlappingHistoryWorkQueue{0, 1, LogNotice};
+	WorkQueue m_NotificationHistoryWorkQueue{0, 1, LogNotice};
+	WorkQueue m_StateHistoryWorkQueue{0, 1, LogNotice};
 
 	String m_PrefixConfigObject;
 	String m_PrefixConfigCheckSum;

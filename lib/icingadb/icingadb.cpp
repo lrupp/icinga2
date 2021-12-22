@@ -33,6 +33,12 @@ IcingaDB::IcingaDB()
 	m_Rcon = nullptr;
 
 	m_WorkQueue.SetName("IcingaDB");
+	m_AckHistoryWorkQueue.SetName("IcingaDB ack history");
+	m_CommentHistoryWorkQueue.SetName("IcingaDB comment history");
+	m_DowntimeHistoryWorkQueue.SetName("IcingaDB downtime history");
+	m_FlappingHistoryWorkQueue.SetName("IcingaDB flapping history");
+	m_NotificationHistoryWorkQueue.SetName("IcingaDB notification history");
+	m_StateHistoryWorkQueue.SetName("IcingaDB state history");
 
 	m_PrefixConfigObject = "icinga:";
 	m_PrefixConfigCheckSum = "icinga:checksum:";
